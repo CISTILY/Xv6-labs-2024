@@ -103,9 +103,14 @@ extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_trace(void);
 
+extern uint64 sys_info(void);
+
+
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
 static uint64 (*syscalls[])(void) = {
+[SYS_sysinfo] sys_info,
+
 [SYS_fork]    sys_fork,
 [SYS_exit]    sys_exit,
 [SYS_wait]    sys_wait,
@@ -181,3 +186,8 @@ syscall(void)
     p->trapframe->a0 = -1;
   }
 }
+
+const char *syscall_names[] = {
+[SYS_sysinfo] "sysinfo",
+};
+
