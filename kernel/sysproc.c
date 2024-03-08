@@ -6,6 +6,22 @@
 #include "spinlock.h"
 #include "proc.h"
 
+#include "sysinfo.h"
+
+uint64
+sys_info(void)
+{
+  uint64 addr;
+  argaddr(0, &addr);
+
+  struct sysinfo sinfo;
+  sinfo.freemem = freemem_size();
+  sinfo.nproc = count_proc();
+  if (copyout(myproc()->pagetable, addr, (char *)&sinfo, sizeof(sinfo)) < 0)
+    return -1;
+  return 0;
+}
+
 uint64
 sys_exit(void)
 {
