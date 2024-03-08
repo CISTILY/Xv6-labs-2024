@@ -131,6 +131,7 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_sysinfo] "sysinfo",
 };
 
 void
@@ -150,8 +151,3 @@ syscall(void)
     p->trapframe->a0 = -1;
   }
 }
-
-const char *syscall_names[] = {
-[SYS_sysinfo] "sysinfo",
-};
-
