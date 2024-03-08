@@ -20,6 +20,18 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
 
+uint64
+count_proc(void)
+{
+  uint64 cnt = 0;
+  for (int i = 0; i < NPROC; ++i) {
+    if (proc[i].state != UNUSED) {
+      cnt++;
+    }
+  }
+  return cnt;
+}
+
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
 // memory model when using p->parent.
