@@ -160,6 +160,7 @@ const char *syscall_names[] = {
 [SYS_mkdir]  = "mkdir",
 [SYS_close]  = "close",
 [SYS_trace]  = "trace",
+[SYS_sysinfo] "sysinfo",
 };
 
 
@@ -186,8 +187,3 @@ syscall(void)
     p->trapframe->a0 = -1;
   }
 }
-
-const char *syscall_names[] = {
-[SYS_sysinfo] "sysinfo",
-};
-
