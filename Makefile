@@ -184,11 +184,6 @@ UPROGS=\
 	$U/_mkdir\
 	$U/_rm\
 	$U/_sh\
-	$U/_sleep\
-	$U/_pingpong\
-	$U/_find\
-	$U/_primes\
-	$U/_xargs\
 	$U/_stressfs\
 	$U/_usertests\
 	$U/_grind\
