@@ -9,7 +9,7 @@ Answer: user mode
 
 4. Write down the assembly instruction the kernel is panicing at. Which register corresponds to the variable num?
 Answer: the assembly instruction the kernel is panicing at
-        80002052:	    00002683          	lw	a3,0(zero) # 0 <_entry-0x80000000>
+        800020da:	    00002903          	lw	s2,0(zero) # 0 <_entry-0x80000000>
         register corresponds to the variable num is a3 
 
 5. Why does the kernel crash? Hint: look at figure 3-3 in the text; is address 0 mapped in the kernel address space? 
