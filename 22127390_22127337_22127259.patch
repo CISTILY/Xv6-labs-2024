@@ -1,0 +1,1004 @@
+diff --git a/Makefile b/Makefile
+index 2a47bdb..69a3399 100644
+--- a/Makefile
++++ b/Makefile
+@@ -172,7 +172,6 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
+ .PRECIOUS: %.o
+ 
+ UPROGS=\
+-	$U/_sysinfotest\
+ 	$U/_cat\
+ 	$U/_echo\
+ 	$U/_forktest\
+@@ -184,12 +183,16 @@ UPROGS=\
+ 	$U/_mkdir\
+ 	$U/_rm\
+ 	$U/_sh\
++	$U/_sleep\
++	$U/_pingpong\
++	$U/_find\
++	$U/_primes\
++	$U/_xargs\
+ 	$U/_stressfs\
+ 	$U/_usertests\
+ 	$U/_grind\
+ 	$U/_wc\
+ 	$U/_zombie\
+-	$U/_trace\
+ 
+ 
+ 
+diff --git a/answers-syscall.txt b/answers-syscall.txt
+deleted file mode 100644
+index 055ddbf..0000000
+--- a/answers-syscall.txt
++++ /dev/null
+@@ -1,24 +0,0 @@
+-1. Looking at the backtrace output, which function called syscall?
+-Answer: usertrap () function at kernel/trap.c called syscall
+-
+-2. What is the value of p->trapframe->a7 and what does that value represent? (Hint: look user/initcode.S, the first user program xv6 starts.)
+-Answer: The value of p->trapframe->a7 is 7 and it represent for SYS_exec which can be seen from kernel/syscall.h 
+-
+-3. What was the previous mode that the CPU was in?
+-Answer: user mode 
+-
+-4. Write down the assembly instruction the kernel is panicing at. Which register corresponds to the variable num?
+-Answer: the assembly instruction the kernel is panicing at
+-        800020da:	    00002903          	lw	s2,0(zero) # 0 <_entry-0x80000000>
+-        register corresponds to the variable num is a3 
+-
+-5. Why does the kernel crash? Hint: look at figure 3-3 in the text; is address 0 mapped in the kernel address space? 
+-Is that confirmed by the value in scause above? 
+-Answer: The kernel crash because of an error occurred while loading data from memory address 0 into s2. From the course textbook, 
+-        address 0 does not map to the kernel space, it begins at virtual address 0x80000000.
+-
+-6. What is the name of the binary that was running when the kernel paniced? What is its process id (pid)?
+-Answer: name = "initcode\000\000\000\000\000\000\000"
+-        pid = 1
+-
+-*Note: We only give our answers in this text file, more details explaination can be found in our Report Section 2a.
+\ No newline at end of file
+diff --git a/conf/lab.mk b/conf/lab.mk
+index cdd8d5f..05e8b8d 100644
+--- a/conf/lab.mk
++++ b/conf/lab.mk
+@@ -1,2 +1 @@
+-
+-LAB=syscall
+\ No newline at end of file
++LAB=util
+diff --git a/grade-lab-syscall b/grade-lab-syscall
+deleted file mode 100755
+index 18d3b72..0000000
+--- a/grade-lab-syscall
++++ /dev/null
+@@ -1,69 +0,0 @@
+-#!/usr/bin/env python3
+-
+-import re
+-from gradelib import *
+-
+-r = Runner(save("xv6.out"))
+-
+-@test(5, "answers-syscall.txt")
+-def test_answers():
+-    # just a simple sanity check, will be graded manually
+-    check_answers("answers-syscall.txt")
+-
+-@test(5, "trace 32 grep")
+-def test_trace_32_grep():
+-    r.run_qemu(shell_script([
+-        'trace 32 grep hello README'
+-    ]))
+-    r.match('^\\d+: syscall read -> 1023')
+-    r.match('^\\d+: syscall read -> 961')
+-    r.match('^\\d+: syscall read -> 321')
+-    r.match('^\\d+: syscall read -> 0')
+-
+-@test(5, "trace all grep")
+-def test_trace_all_grep():
+-    r.run_qemu(shell_script([
+-        'trace 2147483647 grep hello README'
+-    ]))
+-    r.match('^\\d+: syscall trace -> 0')
+-    r.match('^\\d+: syscall exec -> 3')
+-    r.match('^\\d+: syscall open -> 3')
+-    r.match('^\\d+: syscall read -> 1023')
+-    r.match('^\\d+: syscall read -> 961')
+-    r.match('^\\d+: syscall read -> 321')
+-    r.match('^\\d+: syscall read -> 0')
+-    r.match('^\\d+: syscall close -> 0')
+-
+-@test(5, "trace nothing")
+-def test_trace_nothing():
+-    r.run_qemu(shell_script([
+-        'grep hello README'
+-    ]))
+-    r.match(no=[".* syscall .*"])
+-
+-@test(5, "trace children")
+-def test_trace_children():
+-    r.run_qemu(shell_script([
+-        'trace 2 usertests forkforkfork'
+-    ]))
+-    r.match('3: syscall fork -> 4')
+-    r.match('^5: syscall fork -> \\d+')
+-    r.match('^6: syscall fork -> \\d+')
+-    r.match('^\\d+: syscall fork -> -1')
+-    r.match('^ALL TESTS PASSED')
+-
+-@test(14, "sysinfotest")
+-def test_sysinfotest():
+-    r.run_qemu(shell_script([
+-        'sysinfotest'
+-    ]))
+-    r.match('^sysinfotest: OK', no=[".* FAIL .*"])
+-
+-@test(1, "time")
+-def test_time():
+-    check_time()
+-
+-run_tests()
+-
+-
+-
+diff --git a/grade-lab-util b/grade-lab-util
+new file mode 100755
+index 0000000..9032ea6
+--- /dev/null
++++ b/grade-lab-util
+@@ -0,0 +1,86 @@
++#!/usr/bin/env python3
++
++import re
++from gradelib import *
++
++r = Runner(save("xv6.out"))
++
++@test(5, "sleep, no arguments")
++def test_sleep_no_args():
++    r.run_qemu(shell_script([
++        'sleep'
++    ]))
++    r.match(no=["exec .* failed", "$ sleep\n$"])
++
++@test(5, "sleep, returns")
++def test_sleep_no_args():
++    r.run_qemu(shell_script([
++        'sleep',
++        'echo OK'
++    ]))
++    r.match('^OK$', no=["exec .* failed", "$ sleep\n$"])
++
++@test(10, "sleep, makes syscall")
++def test_sleep():
++    r.run_qemu(shell_script([
++        'sleep 10',
++        'echo FAIL'
++    ]), stop_breakpoint('sys_sleep'))
++    r.match('\\$ sleep 10', no=['FAIL'])
++
++@test(20, "pingpong")
++def test_pingpong():
++    r.run_qemu(shell_script([
++        'pingpong', 'echo OK'
++    ]))
++    r.match('^\\d+: received ping$', '^\\d+: received pong$', '^OK$')
++
++@test(20, "primes")
++def test_primes():
++    r.run_qemu(shell_script([
++        'primes', 'echo OK'
++    ]))
++    args = ['prime %d' % i for i in [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31]]
++    args.append('^OK$')
++    r.match(*args)
++
++@test(10, "find, in current directory")
++def test_find_curdir():
++    fn = random_str()
++    r.run_qemu(shell_script([
++        'echo > %s' % fn,
++        'find . %s' % fn
++    ]))
++    r.match('./%s' % fn)
++
++@test(10, "find, recursive")
++def test_find_recursive():
++    needle = random_str()
++    dirs = [random_str() for _ in range(3)]
++    r.run_qemu(shell_script([
++        'mkdir %s' % dirs[0],
++        'echo > %s/%s' % (dirs[0], needle),
++        'mkdir %s/%s' % (dirs[0], dirs[1]),
++        'echo > %s/%s/%s' % (dirs[0], dirs[1], needle),
++        'mkdir %s' % dirs[2],
++        'echo > %s/%s' % (dirs[2], needle),
++        'find . %s' % needle
++    ]))
++    r.match('./%s/%s' % (dirs[0], needle),
++            './%s/%s/%s' % (dirs[0], dirs[1], needle),
++            './%s/%s' % (dirs[2], needle))
++
++@test(19, "xargs")
++def test_xargs():
++    r.run_qemu(shell_script([
++        'sh < xargstest.sh',
++        'echo DONE',
++    ], 'DONE'))
++    matches = re.findall("hello", r.qemu.output)
++    assert_equal(len(matches), 3, "Number of appearances of 'hello'")
++
++@test(1, "time")
++def test_time():
++    check_time()
++    
++run_tests()
+diff --git a/kernel/defs.h b/kernel/defs.h
+index c957d8b..a3c962b 100644
+--- a/kernel/defs.h
++++ b/kernel/defs.h
+@@ -64,9 +64,6 @@ void*           kalloc(void);
+ void            kfree(void *);
+ void            kinit(void);
+ 
+-void            kinit(void);
+-uint64          freemem_size(void);
+-
+ // log.c
+ void            initlog(int, struct superblock*);
+ void            log_write(struct buf*);
+@@ -110,8 +107,6 @@ int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
+ int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
+ void            procdump(void);
+ 
+-uint64          count_proc(void);
+-
+ // swtch.S
+ void            swtch(struct context*, struct context*);
+ 
+diff --git a/kernel/kalloc.c b/kernel/kalloc.c
+index bd79931..0699e7e 100644
+--- a/kernel/kalloc.c
++++ b/kernel/kalloc.c
+@@ -80,20 +80,3 @@ kalloc(void)
+     memset((char*)r, 5, PGSIZE); // fill with junk
+   return (void*)r;
+ }
+-
+-uint64
+-freemem_size(void)
+-{
+-  acquire(&kmem.lock); // prevent race condition
+-
+-  uint64 size = 0;
+-  struct run *r = kmem.freelist;
+-  while (r) {
+-    size++;
+-    r = r->next;
+-  }
+-  
+-  release(&kmem.lock);
+-
+-  return size * PGSIZE;
+-}
+\ No newline at end of file
+diff --git a/kernel/proc.c b/kernel/proc.c
+index 0b1da25..58a8a0b 100644
+--- a/kernel/proc.c
++++ b/kernel/proc.c
+@@ -20,18 +20,6 @@ static void freeproc(struct proc *p);
+ 
+ extern char trampoline[]; // trampoline.S
+ 
+-uint64
+-count_proc(void)
+-{
+-  uint64 cnt = 0;
+-  for (int i = 0; i < NPROC; ++i) {
+-    if (proc[i].state != UNUSED) {
+-      cnt++;
+-    }
+-  }
+-  return cnt;
+-}
+-
+ // helps ensure that wakeups of wait()ing
+ // parents are not lost. helps obey the
+ // memory model when using p->parent.
+@@ -181,7 +169,6 @@ freeproc(struct proc *p)
+   p->killed = 0;
+   p->xstate = 0;
+   p->state = UNUSED;
+-  p->syscall_trace = 0; 
+ }
+ 
+ // Create a user page table for a given process, with no user memory,
+@@ -323,8 +310,6 @@ fork(void)
+ 
+   safestrcpy(np->name, p->name, sizeof(p->name));
+ 
+-  np->syscall_trace = p->syscall_trace;
+-
+   pid = np->pid;
+ 
+   release(&np->lock);
+diff --git a/kernel/proc.h b/kernel/proc.h
+index bb359a3..d021857 100644
+--- a/kernel/proc.h
++++ b/kernel/proc.h
+@@ -104,5 +104,4 @@ struct proc {
+   struct file *ofile[NOFILE];  // Open files
+   struct inode *cwd;           // Current directory
+   char name[16];               // Process name (debugging)
+-  uint64 syscall_trace;
+ };
+diff --git a/kernel/syscall.c b/kernel/syscall.c
+index 401bb2b..ed65409 100644
+--- a/kernel/syscall.c
++++ b/kernel/syscall.c
+@@ -101,9 +101,6 @@ extern uint64 sys_unlink(void);
+ extern uint64 sys_link(void);
+ extern uint64 sys_mkdir(void);
+ extern uint64 sys_close(void);
+-extern uint64 sys_trace(void);
+-extern uint64 sys_info(void);
+-
+ 
+ // An array mapping syscall numbers from syscall.h
+ // to the function that handles the system call.
+@@ -129,38 +126,8 @@ static uint64 (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
+-[SYS_trace]   sys_trace,
+-[SYS_sysinfo] sys_info,
+-};
+-
+-
+-const char *syscall_names[] = {
+-[SYS_fork]   = "fork", 
+-[SYS_exit]   = "exit", 
+-[SYS_wait]   = "wait", 
+-[SYS_pipe]   = "pipe", 
+-[SYS_read]   = "read",
+-[SYS_kill]   = "kill",
+-[SYS_exec]   = "exec",
+-[SYS_fstat]  = "fstat",
+-[SYS_chdir]  = "chdir",
+-[SYS_dup]    = "dup",
+-[SYS_getpid] = "getpid",
+-[SYS_sbrk]   = "sbrk",
+-[SYS_sleep]  = "sleep",
+-[SYS_uptime] = "uptime",
+-[SYS_open]   = "open",
+-[SYS_write]  = "write",
+-[SYS_mknod]  = "mknod",
+-[SYS_unlink] = "unlink",
+-[SYS_link]   = "link",
+-[SYS_mkdir]  = "mkdir",
+-[SYS_close]  = "close",
+-[SYS_trace]  = "trace",
+-[SYS_sysinfo] "sysinfo",
+ };
+ 
+-
+ void
+ syscall(void)
+ {
+@@ -168,17 +135,10 @@ syscall(void)
+   struct proc *p = myproc();
+ 
+   num = p->trapframe->a7;
+-  //num = * (int *) 0;
+   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+     // Use num to lookup the system call function for num, call it,
+     // and store its return value in p->trapframe->a0
+     p->trapframe->a0 = syscalls[num]();
+-
+-    if (p->syscall_trace & (1 << num)) {
+-	    printf("%d: syscall %s -> %d\n", 
+-			  p->pid, syscall_names[num], p->trapframe->a0);
+-    }
+-
+   } else {
+     printf("%d %s: unknown sys call %d\n",
+             p->pid, p->name, num);
+diff --git a/kernel/syscall.h b/kernel/syscall.h
+index e153363..bc5f356 100644
+--- a/kernel/syscall.h
++++ b/kernel/syscall.h
+@@ -20,5 +20,3 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
+-#define SYS_trace  22
+-#define SYS_sysinfo 23
+\ No newline at end of file
+diff --git a/kernel/sysinfo.h b/kernel/sysinfo.h
+deleted file mode 100644
+index fb878e6..0000000
+--- a/kernel/sysinfo.h
++++ /dev/null
+@@ -1,4 +0,0 @@
+-struct sysinfo {
+-  uint64 freemem;   // amount of free memory (bytes)
+-  uint64 nproc;     // number of process
+-};
+diff --git a/kernel/sysproc.c b/kernel/sysproc.c
+index 4dad58c..3b4d5bd 100644
+--- a/kernel/sysproc.c
++++ b/kernel/sysproc.c
+@@ -6,22 +6,6 @@
+ #include "spinlock.h"
+ #include "proc.h"
+ 
+-#include "sysinfo.h"
+-
+-uint64
+-sys_info(void)
+-{
+-  uint64 addr;
+-  argaddr(0, &addr);
+-
+-  struct sysinfo sinfo;
+-  sinfo.freemem = freemem_size();
+-  sinfo.nproc = count_proc();
+-  if (copyout(myproc()->pagetable, addr, (char *)&sinfo, sizeof(sinfo)) < 0)
+-    return -1;
+-  return 0;
+-}
+-
+ uint64
+ sys_exit(void)
+ {
+@@ -107,12 +91,3 @@ sys_uptime(void)
+   release(&tickslock);
+   return xticks;
+ }
+-
+-uint64
+-sys_trace(void)
+-{
+-  int mask;
+-  argint(0, &mask);
+-  myproc()->syscall_trace = mask;
+-  return 0;
+-}
+\ No newline at end of file
+diff --git a/user/find.c b/user/find.c
+new file mode 100644
+index 0000000..734141e
+--- /dev/null
++++ b/user/find.c
+@@ -0,0 +1,106 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++#include "kernel/fs.h"
++
++char* fmtname(char *path)
++{
++    static char buf[DIRSIZ+1];
++    char *p;
++
++    // Find first character after last slash.
++    for(p=path+strlen(path); p >= path && *p != '/'; p--)
++        ;
++    p++;
++
++    // Return name, ended with a null character
++    if(strlen(p) >= DIRSIZ)
++        return p;
++    memmove(buf, p, strlen(p));
++    memset(buf+strlen(p), '\0', DIRSIZ-strlen(p));
++    return buf;
++}
++
++void searchDir(char *path, char *buf, int fd, struct stat st, char *search)
++{ 
++    char *p;
++    struct dirent de;
++    struct stat st2;
++
++    strcpy(buf, path);
++    p = buf+strlen(buf);
++    *p++ = '/';
++
++    // Iterate through directory contents
++    while(read(fd, &de, sizeof(de)) == sizeof(de)){
++        if(de.inum == 0)
++            continue;
++        memmove(p, de.name, DIRSIZ);
++        if(stat(buf, &st) < 0) {
++            printf("find: cannot stat %s\n", buf);
++            continue;
++        }
++        // Only look for files - search through DIRs and ignore CONSOLEs
++        if (st.type == T_DIR) {
++            if (strcmp(fmtname(buf), ".") != 0 && strcmp(fmtname(buf), "..") != 0) {
++                // Get new metadata for directory file
++                int fd2 = open(buf, 0);
++                // Path must have stats
++                if(fstat(fd, &st2) < 0){
++                    fprintf(2, "find: cannot stat %s\n", path);
++                    close(fd);
++                    return;
++                }
++                // Recursive search in found directory
++                searchDir(buf, buf, fd2, st2, search);
++                close(fd2);
++            }
++        } 
++        else if (st.type == T_FILE) {
++            if (strcmp(fmtname(buf), search) == 0) {
++                printf("%s\n", buf);
++            }
++        }
++    }
++}
++
++void find(char *path, char *search)
++{
++    char buf[512];
++    int fd; // Fd of path passed in
++    struct stat st; // Details about path
++
++    // Path must be a directory
++    if((fd = open(path, 0)) < 0){
++        fprintf(2, "find: cannot open %s\n", path);
++        return;
++    }
++
++    // Path must have stats
++    if(fstat(fd, &st) < 0){
++        fprintf(2, "find: cannot stat %s\n", path);
++        close(fd);
++        return;
++    }
++
++    if (st.type == T_DIR) {
++        searchDir(path, buf, fd, st, search);
++    }
++    close(fd);
++}
++
++int main(int argc, char *argv[])
++{
++    int i;
++
++    if(argc < 2) {
++        printf("find: requires a file name to search for");
++    } else if (argc == 2) { // If no starting-point specified, '.' is assumed
++        find(".", argv[1]);
++    } else {
++        for (i = 2; i < argc; i++) {
++            find(argv[1], argv[i]);
++        }
++    }
++    exit(0);
++}
+\ No newline at end of file
+diff --git a/user/pingpong.c b/user/pingpong.c
+new file mode 100644
+index 0000000..8b79e84
+--- /dev/null
++++ b/user/pingpong.c
+@@ -0,0 +1,37 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++
++int main (int argc, char* argv[]) {
++
++    // Check if the input argument is correct or not
++    if (argc > 1) {
++        printf("Usage: pingpong...\n");
++        exit(1);
++    }
++
++    int p[2]; // Pipe file discriptors: read from p[0], write to p[1]
++    char buf[4]; // Buffer for sending or receiving between processes
++
++    pipe(p);
++
++    // Child process
++    if (fork() == 0) {
++        read(p[0], buf, 4);
++        fprintf(1, "%d: received %s\n", getpid(), buf);
++        write(p[1], "pong", 4);
++    }
++
++    // Parent process
++    else {
++        write(p[1], "ping", 4);
++        wait(0); // Wait for the child to finish its execution
++        read(p[0], buf, 4);
++        fprintf(1, "%d: received %s\n", getpid(), buf);
++    }
++
++    close(p[0]);
++    close(p[1]);
++
++    exit(0);
++}
+\ No newline at end of file
+diff --git a/user/primes.c b/user/primes.c
+new file mode 100644
+index 0000000..8ffcf43
+--- /dev/null
++++ b/user/primes.c
+@@ -0,0 +1,55 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++
++void exec_pipe(int fd) {
++    int num;
++    read(fd, &num, sizeof(int));
++    printf("prime %d\n", num);
++
++    int p[2];
++    pipe(p);
++    int tmp = -1;
++    while (1) {
++        int n = read(fd, &tmp, sizeof(int));
++        if (n <= 0) {
++            break;
++        }
++        if (tmp % num != 0) {
++            write(p[1], &tmp, sizeof(int));
++        }
++    }
++    if (tmp == -1) {
++        close(p[1]);
++        close(p[0]);
++        close(fd);
++        return;
++    }
++    int pid = fork();
++    if (pid == 0) {
++        close(p[1]);
++        close(fd);
++        exec_pipe(p[0]);
++        close(p[0]);
++    }
++    else {
++        close(p[1]);
++        close(p[0]);
++        close(fd);
++        wait(0);
++    }
++}
++
++int main(int argc, char *argv[]) {
++    int p[2];
++    pipe(p);
++    for (int i = 2; i < 35; i++) {
++        int n = i;
++        write(p[1], &n, sizeof(int));
++    }
++    close(p[1]);
++    exec_pipe(p[0]);
++    close(p[0]);
++
++    exit(0);
++}
+diff --git a/user/sleep.c b/user/sleep.c
+new file mode 100644
+index 0000000..35bd5a6
+--- /dev/null
++++ b/user/sleep.c
+@@ -0,0 +1,16 @@
++#include "kernel/types.h"
++#include "user/user.h"
++
++int main (int argc, char *argv[]) {
++
++    // Check input arguments
++    if (argc != 2) {
++        printf("Usage: sleep ...\n");
++        exit(1);
++    }
++
++    // Call sleep function
++    sleep(atoi(argv[1]));
++
++    exit(0);
++}
+\ No newline at end of file
+diff --git a/user/sysinfotest.c b/user/sysinfotest.c
+deleted file mode 100644
+index 8a648a6..0000000
+--- a/user/sysinfotest.c
++++ /dev/null
+@@ -1,153 +0,0 @@
+-#include "kernel/types.h"
+-#include "kernel/riscv.h"
+-#include "kernel/sysinfo.h"
+-#include "user/user.h"
+-
+-
+-void
+-sinfo(struct sysinfo *info) {
+-  if (sysinfo(info) < 0) {
+-    printf("FAIL: sysinfo failed");
+-    exit(1);
+-  }
+-}
+-
+-//
+-// use sbrk() to count how many free physical memory pages there are.
+-//
+-int
+-countfree()
+-{
+-  uint64 sz0 = (uint64)sbrk(0);
+-  struct sysinfo info;
+-  int n = 0;
+-
+-  while(1){
+-    if((uint64)sbrk(PGSIZE) == 0xffffffffffffffff){
+-      break;
+-    }
+-    n += PGSIZE;
+-  }
+-  sinfo(&info);
+-  if (info.freemem != 0) {
+-    printf("FAIL: there is no free mem, but sysinfo.freemem=%d\n",
+-      info.freemem);
+-    exit(1);
+-  }
+-  sbrk(-((uint64)sbrk(0) - sz0));
+-  return n;
+-}
+-
+-void
+-testmem() {
+-  struct sysinfo info;
+-  uint64 n = countfree();
+-  
+-  sinfo(&info);
+-
+-  if (info.freemem!= n) {
+-    printf("FAIL: free mem %d (bytes) instead of %d\n", info.freemem, n);
+-    exit(1);
+-  }
+-  
+-  if((uint64)sbrk(PGSIZE) == 0xffffffffffffffff){
+-    printf("sbrk failed");
+-    exit(1);
+-  }
+-
+-  sinfo(&info);
+-    
+-  if (info.freemem != n-PGSIZE) {
+-    printf("FAIL: free mem %d (bytes) instead of %d\n", n-PGSIZE, info.freemem);
+-    exit(1);
+-  }
+-  
+-  if((uint64)sbrk(-PGSIZE) == 0xffffffffffffffff){
+-    printf("sbrk failed");
+-    exit(1);
+-  }
+-
+-  sinfo(&info);
+-    
+-  if (info.freemem != n) {
+-    printf("FAIL: free mem %d (bytes) instead of %d\n", n, info.freemem);
+-    exit(1);
+-  }
+-}
+-
+-void
+-testcall() {
+-  struct sysinfo info;
+-  
+-  if (sysinfo(&info) < 0) {
+-    printf("FAIL: sysinfo failed\n");
+-    exit(1);
+-  }
+-
+-  if (sysinfo((struct sysinfo *) 0xeaeb0b5b00002f5e) !=  0xffffffffffffffff) {
+-    printf("FAIL: sysinfo succeeded with bad argument\n");
+-    exit(1);
+-  }
+-}
+-
+-void testproc() {
+-  struct sysinfo info;
+-  uint64 nproc;
+-  int status;
+-  int pid;
+-  
+-  sinfo(&info);
+-  nproc = info.nproc;
+-
+-  pid = fork();
+-  if(pid < 0){
+-    printf("sysinfotest: fork failed\n");
+-    exit(1);
+-  }
+-  if(pid == 0){
+-    sinfo(&info);
+-    if(info.nproc != nproc+1) {
+-      printf("sysinfotest: FAIL nproc is %d instead of %d\n", info.nproc, nproc+1);
+-      exit(1);
+-    }
+-    exit(0);
+-  }
+-  wait(&status);
+-  sinfo(&info);
+-  if(info.nproc != nproc) {
+-      printf("sysinfotest: FAIL nproc is %d instead of %d\n", info.nproc, nproc);
+-      exit(1);
+-  }
+-}
+-
+-void testbad() {
+-  int pid = fork();
+-  int xstatus;
+-  
+-  if(pid < 0){
+-    printf("sysinfotest: fork failed\n");
+-    exit(1);
+-  }
+-  if(pid == 0){
+-      sinfo(0x0);
+-      exit(0);
+-  }
+-  wait(&xstatus);
+-  if(xstatus == -1)  // kernel killed child?
+-    exit(0);
+-  else {
+-    printf("sysinfotest: testbad succeeded %d\n", xstatus);
+-    exit(xstatus);
+-  }
+-}
+-
+-int
+-main(int argc, char *argv[])
+-{
+-  printf("sysinfotest: start\n");
+-  testcall();
+-  testmem();
+-  testproc();
+-  printf("sysinfotest: OK\n");
+-  exit(0);
+-}
+diff --git a/user/trace.c b/user/trace.c
+deleted file mode 100644
+index dd77760..0000000
+--- a/user/trace.c
++++ /dev/null
+@@ -1,27 +0,0 @@
+-#include "kernel/param.h"
+-#include "kernel/types.h"
+-#include "kernel/stat.h"
+-#include "user/user.h"
+-
+-int
+-main(int argc, char *argv[])
+-{
+-  int i;
+-  char *nargv[MAXARG];
+-
+-  if(argc < 3 || (argv[1][0] < '0' || argv[1][0] > '9')){
+-    fprintf(2, "Usage: %s mask command\n", argv[0]);
+-    exit(1);
+-  }
+-
+-  if (trace(atoi(argv[1])) < 0) {
+-    fprintf(2, "%s: trace failed\n", argv[0]);
+-    exit(1);
+-  }
+-  
+-  for(i = 2; i < argc && i < MAXARG; i++){
+-    nargv[i-2] = argv[i];
+-  }
+-  exec(nargv[0], nargv);
+-  exit(0);
+-}
+diff --git a/user/user.h b/user/user.h
+index a144ea5..4d398d5 100644
+--- a/user/user.h
++++ b/user/user.h
+@@ -22,7 +22,6 @@ int getpid(void);
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
+-int trace(int);
+ 
+ // ulib.c
+ int stat(const char*, struct stat*);
+@@ -40,7 +39,3 @@ void free(void*);
+ int atoi(const char*);
+ int memcmp(const void *, const void *, uint);
+ void *memcpy(void *, const void *, uint);
+-
+-int trace(int);
+-struct sysinfo;
+-int sysinfo(struct sysinfo *);
+\ No newline at end of file
+diff --git a/user/usys.pl b/user/usys.pl
+index c0a4207..01e426e 100755
+--- a/user/usys.pl
++++ b/user/usys.pl
+@@ -36,5 +36,3 @@ entry("getpid");
+ entry("sbrk");
+ entry("sleep");
+ entry("uptime");
+-entry("trace");
+-entry("sysinfo"); 
+\ No newline at end of file
+diff --git a/user/xargs.c b/user/xargs.c
+new file mode 100644
+index 0000000..40d1d9f
+--- /dev/null
++++ b/user/xargs.c
+@@ -0,0 +1,52 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++#include "kernel/fs.h"
++#include "kernel/param.h"
++
++int main(int argc, char *argv[]) {
++    int index = 0;
++    int _argc = 1;
++    char *_argv[MAXARG];
++
++    if (strcmp(argv[1], "-n") == 0) {
++        index = 3;
++    } else {
++        index = 1;
++    }
++
++    _argv[0] = malloc(strlen(argv[index]) + 1);
++    strcpy(_argv[0], argv[index]);
++
++    for (int i = index + 1; i < argc; ++i) {
++        _argv[_argc] = malloc(strlen(argv[i]) + 1);
++        strcpy(_argv[_argc++], argv[i]);
++    }
++
++    _argv[_argc] = malloc(128);
++
++    char buf;
++    int i = 0;
++
++    while (read(0, &buf, 1)) {
++        if (buf == '\n') {
++            _argv[_argc][i++] = '\0';
++
++            if (fork() == 0) {
++                exec(argv[index], _argv);
++            } else {
++                i = 0;
++                wait(0);
++            }
++        } else {
++            _argv[_argc][i++] = buf;
++        }
++    }
++
++    // Free allocated memory
++    for (int i = 0; i <= _argc; ++i) {
++        free(_argv[i]);
++    }
++
++    exit(0);
++}
+diff --git a/user/xargstest.sh b/user/xargstest.sh
+new file mode 100644
+index 0000000..4362589
+--- /dev/null
++++ b/user/xargstest.sh
+@@ -0,0 +1,6 @@
++mkdir a
++echo hello > a/b
++mkdir c
++echo hello > c/b
++echo hello > b
++find . b | xargs grep hello
